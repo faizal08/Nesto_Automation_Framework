@@ -8,101 +8,95 @@ import com.aventstack.extentreports.reporter.configuration.Theme;
 import com.nesto.automation.parser.StepParser;
 import com.nesto.automation.parser.TestStep;
 import com.nesto.automation.utils.ExcelReader;
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
+import java.io.FileInputStream;
 import java.util.ArrayList;
 import java.util.List;
 
 public class Main {
     public static void main(String[] args) {
-        // 1. Setup Extent Reports Configuration
+        // 1. Setup Reports
         String reportPath = System.getProperty("user.dir") + "/reports/Nesto_Automation_Report.html";
         ExtentSparkReporter spark = new ExtentSparkReporter(reportPath);
         spark.config().setTheme(Theme.DARK);
         spark.config().setDocumentTitle("Nesto Automation Report");
-        spark.config().setReportName("Nesto Admin Login Regression Results");
+        spark.config().setReportName("Nesto Detailed Test Execution Results");
 
         ExtentReports extent = new ExtentReports();
         extent.attachReporter(spark);
 
-        ExtentTest currentTest = null;
         String excelPath = "src/main/resources/testdata/Nesto_TestCases.xlsx";
+        TestExecutor executor = new TestExecutor();
+        ExtentTest currentTest = null;
 
-        ExcelReader reader = new ExcelReader();
-        List<String> rawSteps = reader.getTestSteps(excelPath, "Sheet1");
-        List<TestStep> allSteps = new ArrayList<>();
-        boolean isHeader = true;
+        try {
+            FileInputStream fis = new FileInputStream(excelPath);
+            Workbook workbook = new XSSFWorkbook(fis);
+            Sheet sheet = workbook.getSheet("Sheet1");
 
-        for (String raw : rawSteps) {
-            if (isHeader) { isHeader = false; continue; }
-            if (raw != null && !raw.trim().isEmpty()) {
-                allSteps.add(StepParser.parseStep(raw));
-            }
-        }
+            System.out.println("🚀 Initializing Nesto Automation Engine...");
 
-        if (!allSteps.isEmpty()) {
-            TestExecutor executor = new TestExecutor();
-            try {
-                System.out.println("🚀 Initializing Nesto Automation Engine...");
-                int testCount = 0;
+            for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+                Row row = sheet.getRow(i);
+                if (row == null) continue;
 
-                for (TestStep step : allSteps) {
+                // Column 0 = ID, Column 1 = Description, Column 2 = Test Steps
+                String tcId = (row.getCell(0) != null) ? row.getCell(0).toString().trim() : "";
+                String tcDesc = (row.getCell(1) != null) ? row.getCell(1).toString().trim() : "";
+                String stepText = (row.getCell(2) != null) ? row.getCell(2).toString().trim() : "";
 
-                    if (step.getAction().equalsIgnoreCase("openurl")) {
+                if (stepText.isEmpty()) continue;
 
-                        // FIX: Capture screenshot of the PREVIOUS test case before starting a new one
-                        if (currentTest != null) {
-                            String screenPath = executor.captureScreenshot("TC_" + testCount + "_Success");
-                            currentTest.pass("Final State of TC #" + testCount,
-                                    MediaEntityBuilder.createScreenCaptureFromPath(screenPath).build());
-                        }
+                // Whenever a new TC ID is found, finalize previous and start a NEW Report entry
+                if (!tcId.isEmpty()) {
 
-                        testCount++;
-                        String testName = "Test Case #" + testCount;
-                        currentTest = extent.createTest(testName);
-
-                        System.out.println("\n--------------------------------------");
-                        System.out.println("📝 RUNNING " + testName);
-                        System.out.println("--------------------------------------");
-
-                        executor.resetSession();
-                        Thread.sleep(1000);
-                        currentTest.info("Browser session reset and cookies cleared.");
+                    // Capture screenshot for previous test before starting new one
+                    if (currentTest != null) {
+                        String screen = executor.captureScreenshot("Success_" + System.currentTimeMillis());
+                        currentTest.pass("Final State", MediaEntityBuilder.createScreenCaptureFromPath(screen).build());
                     }
 
-                    try {
-                        executor.executeIndividualStep(step);
-                        if (currentTest != null) {
-                            currentTest.pass("Step executed: " + step.getAction());
-                        }
-                    } catch (Exception stepException) {
-                        if (currentTest != null) {
-                            // Capture screenshot immediately on failure
-                            String failurePath = executor.captureScreenshot("Failure_TC_" + testCount);
-                            currentTest.fail("Step Failed: " + stepException.getMessage(),
-                                    MediaEntityBuilder.createScreenCaptureFromPath(failurePath).build());
-                        }
-                        throw stepException;
-                    }
+                    // Create New Test in Report with ID and Description
+                    String fullTestTitle = tcId + " : " + tcDesc;
+                    currentTest = extent.createTest(fullTestTitle);
+
+                    System.out.println("\n--------------------------------------");
+                    System.out.println("📝 RUNNING: " + fullTestTitle);
+                    System.out.println("--------------------------------------");
+
+                    executor.resetSession();
                 }
 
-                // FIX: Capture the very last test case success screenshot
-                if (currentTest != null) {
-                    String lastImg = executor.captureScreenshot("TC_" + testCount + "_Success");
-                    currentTest.pass("Final State of TC #" + testCount,
-                            MediaEntityBuilder.createScreenCaptureFromPath(lastImg).build());
+                // Execute and Log Step
+                try {
+                    TestStep parsedStep = StepParser.parseStep(stepText);
+                    executor.executeIndividualStep(parsedStep);
+                    currentTest.pass(stepText);
+                } catch (Exception stepException) {
+                    String failScreen = executor.captureScreenshot("Fail_" + tcId);
+                    currentTest.fail("Failed at step: " + stepText + " | Error: " + stepException.getMessage(),
+                            MediaEntityBuilder.createScreenCaptureFromPath(failScreen).build());
+                    break; // Stop steps for this specific TC on failure
                 }
-
-                System.out.println("\n✅ ALL TESTS COMPLETED SUCCESSFULLY!");
-
-            } catch (Exception e) {
-                System.err.println("\n❌ EXECUTION STOPPED DUE TO ERROR: " + e.getMessage());
-            } finally {
-                extent.flush();
-                System.out.println("📊 Detailed Report Generated at: " + reportPath);
-                // executor.quit();
             }
-        } else {
-            System.err.println("⚠️ No executable steps found!");
+
+            // Final screenshot for the very last test case
+            if (currentTest != null) {
+                String lastImg = executor.captureScreenshot("Final_Success");
+                currentTest.pass("All steps completed.", MediaEntityBuilder.createScreenCaptureFromPath(lastImg).build());
+            }
+
+            workbook.close();
+            fis.close();
+            System.out.println("\n✅ ALL TESTS COMPLETED SUCCESSFULLY!");
+
+        } catch (Exception e) {
+            System.err.println("\n❌ FATAL ERROR: " + e.getMessage());
+        } finally {
+            extent.flush();
+            System.out.println("📊 Detailed Report Generated at: " + reportPath);
         }
     }
 }
