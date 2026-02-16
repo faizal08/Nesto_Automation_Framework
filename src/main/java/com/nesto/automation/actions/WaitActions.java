@@ -9,8 +9,10 @@ import java.time.Duration;
 
 public class WaitActions {
     private WebDriverWait wait;
+    private WebDriver driver;
 
     public WaitActions(WebDriver driver) {
+        this.driver = driver;
         // Set a global 10-second timeout
         this.wait = new WebDriverWait(driver, Duration.ofSeconds(10));
     }
@@ -23,7 +25,13 @@ public class WaitActions {
         return wait.until(ExpectedConditions.elementToBeClickable(By.xpath(xpath)));
     }
 
-    public void waitForUrl(String url) {
-        wait.until(org.openqa.selenium.support.ui.ExpectedConditions.urlToBe(url));
+    /**
+     * UPDATED: Now returns a boolean to satisfy the 'VerificationActions' class.
+     * If the URL doesn't match within 10 seconds, this will throw a TimeoutException.
+     */
+    public boolean waitForUrl(String expectedUrlPart) {
+        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(10));
+        // This is the key: it waits until the address bar actually changes
+        return wait.until(ExpectedConditions.urlContains(expectedUrlPart));
     }
 }

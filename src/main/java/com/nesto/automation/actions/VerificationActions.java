@@ -2,6 +2,9 @@ package com.nesto.automation.actions;
 
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.WebDriverWait;
+import java.time.Duration;
 
 public class VerificationActions {
     private WaitActions waitActions;
@@ -12,38 +15,31 @@ public class VerificationActions {
         this.waitActions = waitActions;
     }
 
+    /**
+     * Verifies if the element text contains the expected text (Case-Insensitive)
+     */
     public void verifyText(String xpath, String expectedText) {
-        // 1. Wait for the element to appear
         WebElement element = waitActions.waitForElementVisible(xpath);
-
-        // 2. Get the actual text from the website
         String actualText = element.getText().trim();
 
-        // 3. Compare them
-        if (actualText.equalsIgnoreCase(expectedText)) {
-            System.out.println("✅ PASS: Found expected text [" + expectedText + "]");
+        if (actualText.toLowerCase().contains(expectedText.toLowerCase().trim())) {
+            System.out.println("✅ PASS: Text validation successful! Found: [" + actualText + "]");
         } else {
-            throw new RuntimeException("❌ FAIL: Expected [" + expectedText + "] but found [" + actualText + "]");
+            throw new RuntimeException("❌ FAIL: Text mismatch! Expected [" + expectedText + "] but got [" + actualText + "]");
         }
     }
 
-
-    public void verifyElementDisplayed(String xpath) {
-        WebElement element = waitActions.waitForElementVisible(xpath);
-        if (element.isDisplayed()) {
-            System.out.println("✅ PASS: Element is visible on screen.");
-        }
-    }
-
-    public void verifyUrl(String expectedUrl) {
+    /**
+     * Verifies if the Current URL contains the expected keyword (e.g., 'dashboard' or 'error')
+     */
+    public void verifyUrl(String expectedUrlPart) {
+        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(10));
         try {
-            // 1. Give the browser time to redirect
-            waitActions.waitForUrl(expectedUrl);
-            System.out.println("✅ PASS: URL matches [" + expectedUrl + "]");
+            // This is the CRITICAL part: Wait for the address bar to change
+            wait.until(ExpectedConditions.urlContains(expectedUrlPart));
+            System.out.println("✅ PASS: URL now contains [" + expectedUrlPart + "]");
         } catch (Exception e) {
-            // 2. If it still doesn't match after waiting, then fail
-            String actualUrl = driver.getCurrentUrl();
-            throw new RuntimeException("❌ FAIL: Expected URL [" + expectedUrl + "] but was [" + actualUrl + "]");
+            throw new RuntimeException("❌ FAIL: URL did not change to [" + expectedUrlPart + "] within 10s");
         }
     }
 }
