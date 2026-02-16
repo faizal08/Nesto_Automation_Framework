@@ -12,8 +12,6 @@ import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import java.io.FileInputStream;
-import java.util.ArrayList;
-import java.util.List;
 
 public class Main {
     public static void main(String[] args) {
@@ -49,16 +47,14 @@ public class Main {
 
                 if (stepText.isEmpty()) continue;
 
-                // Whenever a new TC ID is found, finalize previous and start a NEW Report entry
+                // Whenever a new TC ID is found, start a NEW Report entry
                 if (!tcId.isEmpty()) {
-
-                    // Capture screenshot for previous test before starting new one
-                    if (currentTest != null) {
-                        String screen = executor.captureScreenshot("Success_" + System.currentTimeMillis());
-                        currentTest.pass("Final State", MediaEntityBuilder.createScreenCaptureFromPath(screen).build());
+                    // Capture screenshot for previous test success before starting new one
+                    if (currentTest != null && currentTest.getModel().getStatus().toString().equalsIgnoreCase("pass")) {
+                        String screen = executor.captureScreenshot("Final_" + System.currentTimeMillis());
+                        currentTest.pass("Final State Success", MediaEntityBuilder.createScreenCaptureFromPath(screen).build());
                     }
 
-                    // Create New Test in Report with ID and Description
                     String fullTestTitle = tcId + " : " + tcDesc;
                     currentTest = extent.createTest(fullTestTitle);
 
@@ -69,31 +65,49 @@ public class Main {
                     executor.resetSession();
                 }
 
-                // Execute and Log Step
+                // 2. Execute and Log Step with Error Isolation
                 try {
                     TestStep parsedStep = StepParser.parseStep(stepText);
                     executor.executeIndividualStep(parsedStep);
                     currentTest.pass(stepText);
                 } catch (Exception stepException) {
-                    String failScreen = executor.captureScreenshot("Fail_" + tcId);
-                    currentTest.fail("Failed at step: " + stepText + " | Error: " + stepException.getMessage(),
+                    // Log the failure
+                    String failScreen = executor.captureScreenshot("Fail_" + System.currentTimeMillis());
+                    currentTest.fail("❌ FAILED at step: " + stepText + " | Error: " + stepException.getMessage(),
                             MediaEntityBuilder.createScreenCaptureFromPath(failScreen).build());
-                    break; // Stop steps for this specific TC on failure
+
+                    System.err.println("⚠️ TC Failed. Skipping remaining steps for this test case...");
+
+                    // 3. SKIP LOGIC: Move the index 'i' to the end of this test case
+                    // We check if the next row's ID column is empty. If empty, it belongs to the current failed TC.
+                    while (i + 1 <= sheet.getLastRowNum()) {
+                        Row nextRow = sheet.getRow(i + 1);
+                        if (nextRow != null) {
+                            String nextId = (nextRow.getCell(0) != null) ? nextRow.getCell(0).toString().trim() : "";
+                            if (nextId.isEmpty()) {
+                                i++; // Skip this row because it's a step of the failed test
+                            } else {
+                                break; // Found the next Test Case ID, exit the skip-loop
+                            }
+                        } else {
+                            break;
+                        }
+                    }
                 }
             }
 
-            // Final screenshot for the very last test case
-            if (currentTest != null) {
+            // Final screenshot if the last test was successful
+            if (currentTest != null && currentTest.getModel().getStatus().toString().equalsIgnoreCase("pass")) {
                 String lastImg = executor.captureScreenshot("Final_Success");
                 currentTest.pass("All steps completed.", MediaEntityBuilder.createScreenCaptureFromPath(lastImg).build());
             }
 
             workbook.close();
             fis.close();
-            System.out.println("\n✅ ALL TESTS COMPLETED SUCCESSFULLY!");
+            System.out.println("\n✅ ENGINE FINISHED ALL TEST CASES!");
 
         } catch (Exception e) {
-            System.err.println("\n❌ FATAL ERROR: " + e.getMessage());
+            System.err.println("\n❌ FATAL SYSTEM ERROR: " + e.getMessage());
         } finally {
             extent.flush();
             System.out.println("📊 Detailed Report Generated at: " + reportPath);
