@@ -1,77 +1,108 @@
 package com.nesto.automation.core;
 
+import com.aventstack.extentreports.ExtentReports;
+import com.aventstack.extentreports.ExtentTest;
+import com.aventstack.extentreports.MediaEntityBuilder;
+import com.aventstack.extentreports.reporter.ExtentSparkReporter;
+import com.aventstack.extentreports.reporter.configuration.Theme;
 import com.nesto.automation.parser.StepParser;
 import com.nesto.automation.parser.TestStep;
 import com.nesto.automation.utils.ExcelReader;
+
 import java.util.ArrayList;
 import java.util.List;
 
 public class Main {
     public static void main(String[] args) {
-        // 1. Define path to your Excel file
+        // 1. Setup Extent Reports Configuration
+        String reportPath = System.getProperty("user.dir") + "/reports/Nesto_Automation_Report.html";
+        ExtentSparkReporter spark = new ExtentSparkReporter(reportPath);
+        spark.config().setTheme(Theme.DARK);
+        spark.config().setDocumentTitle("Nesto Automation Report");
+        spark.config().setReportName("Nesto Admin Login Regression Results");
+
+        ExtentReports extent = new ExtentReports();
+        extent.attachReporter(spark);
+
+        ExtentTest currentTest = null;
         String excelPath = "src/main/resources/testdata/Nesto_TestCases.xlsx";
 
-        // 2. Read raw strings from Excel
         ExcelReader reader = new ExcelReader();
         List<String> rawSteps = reader.getTestSteps(excelPath, "Sheet1");
-
-        // 3. Parse raw strings into executable TestStep objects
         List<TestStep> allSteps = new ArrayList<>();
         boolean isHeader = true;
 
         for (String raw : rawSteps) {
-            // Skip the first row if it is a header (e.g., "Test Steps")
-            if (isHeader) {
-                isHeader = false;
-                continue;
-            }
-
-            // Only add steps that are not empty
+            if (isHeader) { isHeader = false; continue; }
             if (raw != null && !raw.trim().isEmpty()) {
                 allSteps.add(StepParser.parseStep(raw));
             }
         }
 
-        // 4. Fire up the Selenium Engine and Run the Tests
         if (!allSteps.isEmpty()) {
             TestExecutor executor = new TestExecutor();
             try {
                 System.out.println("🚀 Initializing Nesto Automation Engine...");
-
                 int testCount = 0;
+
                 for (TestStep step : allSteps) {
 
-                    // Logic: Every time we see "openurl", we treat it as a brand new Test Case
                     if (step.getAction().equalsIgnoreCase("openurl")) {
+
+                        // FIX: Capture screenshot of the PREVIOUS test case before starting a new one
+                        if (currentTest != null) {
+                            String screenPath = executor.captureScreenshot("TC_" + testCount + "_Success");
+                            currentTest.pass("Final State of TC #" + testCount,
+                                    MediaEntityBuilder.createScreenCaptureFromPath(screenPath).build());
+                        }
+
                         testCount++;
+                        String testName = "Test Case #" + testCount;
+                        currentTest = extent.createTest(testName);
+
                         System.out.println("\n--------------------------------------");
-                        System.out.println("📝 RUNNING TEST CASE #" + testCount);
+                        System.out.println("📝 RUNNING " + testName);
                         System.out.println("--------------------------------------");
 
-                        // IMPORTANT: Clear cookies and wait a moment.
-                        // This ensures TC_01 success doesn't bypass the login screen for TC_02.
                         executor.resetSession();
                         Thread.sleep(1000);
+                        currentTest.info("Browser session reset and cookies cleared.");
                     }
 
-                    // Run the specific step (Type, Click, or Verify)
-                    executor.executeIndividualStep(step);
+                    try {
+                        executor.executeIndividualStep(step);
+                        if (currentTest != null) {
+                            currentTest.pass("Step executed: " + step.getAction());
+                        }
+                    } catch (Exception stepException) {
+                        if (currentTest != null) {
+                            // Capture screenshot immediately on failure
+                            String failurePath = executor.captureScreenshot("Failure_TC_" + testCount);
+                            currentTest.fail("Step Failed: " + stepException.getMessage(),
+                                    MediaEntityBuilder.createScreenCaptureFromPath(failurePath).build());
+                        }
+                        throw stepException;
+                    }
+                }
+
+                // FIX: Capture the very last test case success screenshot
+                if (currentTest != null) {
+                    String lastImg = executor.captureScreenshot("TC_" + testCount + "_Success");
+                    currentTest.pass("Final State of TC #" + testCount,
+                            MediaEntityBuilder.createScreenCaptureFromPath(lastImg).build());
                 }
 
                 System.out.println("\n✅ ALL TESTS COMPLETED SUCCESSFULLY!");
 
             } catch (Exception e) {
-                System.err.println("\n❌ EXECUTION STOPPED DUE TO ERROR:");
-                System.err.println("👉 " + e.getMessage());
-                // Use e.printStackTrace() if you need to see the exact line number of the crash
-                // e.printStackTrace();
+                System.err.println("\n❌ EXECUTION STOPPED DUE TO ERROR: " + e.getMessage());
             } finally {
-                // To keep the browser open for inspection, keep this commented out.
-                // To close it automatically, uncomment the line below:
+                extent.flush();
+                System.out.println("📊 Detailed Report Generated at: " + reportPath);
                 // executor.quit();
             }
         } else {
-            System.err.println("⚠️ No executable steps found! Check your Excel file and Column index (should be Column 2/C).");
+            System.err.println("⚠️ No executable steps found!");
         }
     }
 }

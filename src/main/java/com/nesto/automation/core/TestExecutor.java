@@ -2,12 +2,14 @@ package com.nesto.automation.core;
 
 import com.nesto.automation.actions.*;
 import com.nesto.automation.parser.TestStep;
-import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.WebElement;
+import org.apache.commons.io.FileUtils;
+import org.openqa.selenium.*;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
-import org.openqa.selenium.JavascriptExecutor;
 import io.github.bonigarcia.wdm.WebDriverManager;
+
+import java.io.File;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -115,6 +117,25 @@ public class TestExecutor {
             default:
                 System.out.println("⚠️ Unknown action keyword: " + action);
         }
+    }
+
+    public String captureScreenshot(String fileName) {
+        // 1. Ensure folder exists
+        File folder = new File("reports/screenshots");
+        if (!folder.exists()) folder.mkdirs();
+
+        // 2. We save the file to the physical path
+        String filePath = "reports/screenshots/" + fileName + ".png";
+
+        File src = ((TakesScreenshot) driver).getScreenshotAs(OutputType.FILE);
+        try {
+            FileUtils.copyFile(src, new File(filePath));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        // 3. CRITICAL: Return ONLY the relative path for the HTML report to read
+        return "screenshots/" + fileName + ".png";
     }
 
     public void quit() {
