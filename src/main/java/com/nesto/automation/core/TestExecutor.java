@@ -25,26 +25,22 @@ public class TestExecutor {
 
         ChromeOptions options = new ChromeOptions();
 
-        // 1. Disable the Password Manager & Autofill Service
+        // --- 🔒 RESTORED: PASSWORD MANAGER & AUTOFILL BLOCKERS ---
         Map<String, Object> prefs = new HashMap<>();
         prefs.put("credentials_enable_service", false);
         prefs.put("profile.password_manager_enabled", false);
         prefs.put("autofill.profile_enabled", false);
-        // This specifically targets the "Breach/Leaked" check
         prefs.put("profile.password_manager_leak_detection", false);
         options.setExperimentalOption("prefs", prefs);
 
-        // 2. Disable Safe Browsing (This is why it keeps re-enabling)
-        // These arguments stop the background service that checks passwords
+        // --- 🛡️ RESTORED: SAFE BROWSING & BREACH CHECK BLOCKERS ---
         options.addArguments("--safebrowsing-disable-address-inventory-limit");
         options.addArguments("--safebrowsing-disable-extension-whitelist");
         options.addArguments("--disable-features=SafeBrowsingPasswordCheck");
-
-        // 3. Prevent Chrome from "Syncing" or searching for your Google Account
         options.addArguments("--disable-sync");
         options.addArguments("--no-first-run");
 
-        // 4. Clean up Automation info bars
+        // --- 🛠️ RESTORED: AUTOMATION INFOBAR REMOVAL ---
         options.setExperimentalOption("excludeSwitches", new String[]{"enable-automation"});
         options.setExperimentalOption("useAutomationExtension", false);
 
@@ -81,19 +77,19 @@ public class TestExecutor {
                 break;
 
             case "click":
-                // Handle Login Form Submission
-                if (xpath.contains("submit") || value.toLowerCase().contains("sign in")) {
+                // 1. Logic for Login Form Submission
+                if (xpath.contains("submit") || value.toLowerCase().contains("sign in") || value.toLowerCase().contains("sign up")) {
                     WebElement element = waitActions.waitForElementClickable(xpath);
                     element.submit();
                     System.out.println("📤 Form submitted via .submit()");
                 } else {
-                    // Use JavaScript click for the Register Link to bypass any overlapping UI layers
+                    // 2. Logic for Sidebar/Links - Using JS Click to bypass overlapping layers
                     try {
                         WebElement element = waitActions.waitForElementClickable(xpath);
                         ((JavascriptExecutor) driver).executeScript("arguments[0].click();", element);
                         System.out.println("🖱️ Clicked via JavaScript (Bypassed UI blocks)");
                     } catch (Exception e) {
-                        clickActions.click(xpath); // Fallback to standard click
+                        clickActions.click(xpath); // Fallback
                     }
                 }
                 break;
@@ -104,11 +100,12 @@ public class TestExecutor {
 
             case "verify":
                 if (xpath == null || xpath.isEmpty()) {
-                    // Wait for URL change (Crucial for TC_03)
-                    boolean urlChanged = waitActions.waitForUrl(value);
-                    if (urlChanged) {
-                        System.out.println("✅ PASS: URL correctly contains [" + value + "]");
+                    // Optimized for Multi-Sheet: Handles "Verify URL contains"
+                    boolean urlMatched = waitActions.waitForUrl(value);
+                    if (!urlMatched) {
+                        throw new RuntimeException("❌ URL Verification Failed! Expected to find: " + value);
                     }
+                    System.out.println("✅ PASS: URL correctly contains [" + value + "]");
                 } else {
                     verificationActions.verifyText(xpath, value);
                 }
@@ -120,21 +117,16 @@ public class TestExecutor {
     }
 
     public String captureScreenshot(String fileName) {
-        // 1. Ensure folder exists
         File folder = new File("reports/screenshots");
         if (!folder.exists()) folder.mkdirs();
 
-        // 2. We save the file to the physical path
         String filePath = "reports/screenshots/" + fileName + ".png";
-
         File src = ((TakesScreenshot) driver).getScreenshotAs(OutputType.FILE);
         try {
             FileUtils.copyFile(src, new File(filePath));
         } catch (IOException e) {
             e.printStackTrace();
         }
-
-        // 3. CRITICAL: Return ONLY the relative path for the HTML report to read
         return "screenshots/" + fileName + ".png";
     }
 
