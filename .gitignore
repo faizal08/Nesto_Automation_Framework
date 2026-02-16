@@ -1,0 +1,60 @@
+# ====================================================================
+# NESTO AUTOMATION FRAMEWORK - CUSTOM IGNORES
+# ====================================================================
+
+# Ignore the auto-generated test reports and logs
+test-reports/
+logs/
+*.log
+
+# Ignore the screenshots (usually inside test-reports)
+**/screenshots/
+
+# Ignore Excel temporary files (created when you have test cases open)
+~$*.xlsx
+*.tmp
+
+# Ignore local browser drivers
+*.exe
+drivers/
+
+# ====================================================================
+# MAVEN & JAVA STANDARD
+# ====================================================================
+
+target/
+bin/
+out/
+*.class
+*.jar
+*.war
+*.ear
+
+# ====================================================================
+# IDE SPECIFIC (IntelliJ, VS Code, Eclipse)
+# ====================================================================
+
+# IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+
+# Visual Studio Code
+.vscode/
+.history/
+
+# Eclipse
+.metadata/
+.classpath
+.project
+.settings/
+.factorypath
+
+# ====================================================================
+# SYSTEM FILES
+# ====================================================================
+
+.DS_Store
+Thumbs.db
