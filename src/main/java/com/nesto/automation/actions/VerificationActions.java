@@ -1,5 +1,6 @@
 package com.nesto.automation.actions;
 
+import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.ui.ExpectedConditions;
@@ -40,6 +41,15 @@ public class VerificationActions {
             System.out.println("✅ PASS: URL now contains [" + expectedUrlPart + "]");
         } catch (Exception e) {
             throw new RuntimeException("❌ FAIL: URL did not change to [" + expectedUrlPart + "] within 10s");
+        }
+    }
+
+    public void verifyElementCount(String xpath, String expectedCount) {
+        int actualCount = driver.findElements(By.xpath(xpath)).size();
+        if (String.valueOf(actualCount).equals(expectedCount.trim())) {
+            System.out.println("✅ PASS: Count matches! Found " + actualCount + " rows.");
+        } else {
+            throw new RuntimeException("❌ FAIL: Count mismatch! UI has [" + actualCount + "] rows but DB expected [" + expectedCount + "]");
         }
     }
 }

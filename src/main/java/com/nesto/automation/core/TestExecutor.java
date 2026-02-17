@@ -12,6 +12,7 @@ import io.github.bonigarcia.wdm.WebDriverManager;
 import java.io.File;
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class TestExecutor {
@@ -100,26 +101,38 @@ public class TestExecutor {
                 } else {
                     // --- 📊 LIVE DATABASE & UI VERIFICATION ---
                     String expectedValue = value;
-                    String logPrefix = "Verified Text: ";
-
                     if (value.startsWith("{DB_QUERY}")) {
                         String sql = value.replace("{DB_QUERY}", "");
                         expectedValue = DatabaseUtil.getSingleValue(sql);
-                        logPrefix = "DB Validation: ";
                     }
 
-                    // Get UI text and compare
-                    WebElement element = waitActions.waitForElementVisible(xpath);
-                    String actualUIValue = element.getText().trim();
+                    // --- 🛠️ FIX: DIFFERENTIATE BETWEEN TEXT VERIFY AND COUNT VERIFY ---
+                    // If XPath ends with /tr or /td, and we expect a number, we perform a count check
+                    if (xpath.endsWith("/tr") || xpath.endsWith("/tbody/tr")) {
+                        List<WebElement> elements = driver.findElements(By.xpath(xpath));
+                        String actualCount = String.valueOf(elements.size());
 
-                    // --- 📝 SET DETAILS FOR REPORTING ---
-                    String comparisonResult = logPrefix + "UI[" + actualUIValue + "] vs DB/Expected[" + expectedValue + "]";
-                    step.setDetails(comparisonResult);
+                        String comparisonResult = "Count Validation: UI[" + actualCount + "] vs DB/Expected[" + expectedValue + "]";
+                        step.setDetails(comparisonResult);
 
-                    if (actualUIValue.contains(expectedValue)) {
-                        System.out.println("✅ PASS: " + comparisonResult);
+                        if (actualCount.equals(expectedValue.trim())) {
+                            System.out.println("✅ PASS: " + comparisonResult);
+                        } else {
+                            throw new RuntimeException("❌ COUNT MISMATCH! " + comparisonResult);
+                        }
                     } else {
-                        throw new RuntimeException("❌ DATA MISMATCH! " + comparisonResult);
+                        // STANDARD TEXT VERIFICATION
+                        WebElement element = waitActions.waitForElementVisible(xpath);
+                        String actualUIValue = element.getText().trim();
+
+                        String comparisonResult = "Text Validation: UI[" + actualUIValue + "] vs DB/Expected[" + expectedValue + "]";
+                        step.setDetails(comparisonResult);
+
+                        if (actualUIValue.toLowerCase().contains(expectedValue.toLowerCase().trim())) {
+                            System.out.println("✅ PASS: " + comparisonResult);
+                        } else {
+                            throw new RuntimeException("❌ DATA MISMATCH! " + comparisonResult);
+                        }
                     }
                 }
                 break;
