@@ -2,6 +2,7 @@ package com.nesto.automation.core;
 
 import com.nesto.automation.actions.*;
 import com.nesto.automation.parser.TestStep;
+import com.nesto.automation.utils.DatabaseUtil; // Added Import
 import org.apache.commons.io.FileUtils;
 import org.openqa.selenium.*;
 import org.openqa.selenium.chrome.ChromeDriver;
@@ -24,7 +25,6 @@ public class TestExecutor {
     public TestExecutor() {
         WebDriverManager.chromedriver().setup();
 
-        // --- 📂 SETUP DOWNLOAD FOLDER ---
         this.downloadPath = System.getProperty("user.dir") + File.separator + "downloads";
         File downloadDir = new File(downloadPath);
         if (!downloadDir.exists()) downloadDir.mkdirs();
@@ -45,9 +45,8 @@ public class TestExecutor {
         prefs.put("safebrowsing.enabled", true);
         options.setExperimentalOption("prefs", prefs);
 
-        // --- 🛡️ SAFE BROWSING & BROWSER SECURITY ---
+        // --- 🛡️ BROWSER SECURITY ---
         options.addArguments("--safebrowsing-disable-address-inventory-limit");
-        options.addArguments("--safebrowsing-disable-extension-whitelist");
         options.addArguments("--disable-features=SafeBrowsingPasswordCheck");
         options.addArguments("--disable-sync");
         options.addArguments("--no-first-run");
@@ -75,7 +74,7 @@ public class TestExecutor {
                 break;
 
             case "click":
-                if (xpath.contains("submit") || value.toLowerCase().contains("sign in")) {
+                if (xpath != null && (xpath.contains("submit") || value.toLowerCase().contains("sign in"))) {
                     waitActions.waitForElementClickable(xpath).submit();
                 } else {
                     try {
@@ -92,15 +91,30 @@ public class TestExecutor {
             case "verify":
             case "verifydownload":
                 if (xpath == null || xpath.isEmpty()) {
-                    // SMART LOGIC: If value is "pdf", check the folder. Otherwise, check the URL.
                     if (value.toLowerCase().contains("pdf")) {
                         handleFileVerification(value);
                     } else {
                         boolean urlMatched = waitActions.waitForUrl(value);
-                        if (!urlMatched) throw new RuntimeException("❌ URL Match Failed: " + value);
+                        if (!urlMatched) throw new RuntimeException("❌ URL Verification Failed: " + value);
                     }
                 } else {
-                    verificationActions.verifyText(xpath, value);
+                    // --- 📊 NEW: LIVE DATABASE VERIFICATION LOGIC ---
+                    String expectedValue = value;
+                    if (value.startsWith("{DB_QUERY}")) {
+                        String sql = value.replace("{DB_QUERY}", "");
+                        expectedValue = DatabaseUtil.getSingleValue(sql);
+                        System.out.println("🔍 DB Result: " + expectedValue);
+                    }
+
+                    // Get UI text and compare
+                    WebElement element = waitActions.waitForElementVisible(xpath);
+                    String actualUIValue = element.getText().trim();
+
+                    if (actualUIValue.contains(expectedValue)) {
+                        System.out.println("✅ PASS: UI (" + actualUIValue + ") matches DB (" + expectedValue + ")");
+                    } else {
+                        throw new RuntimeException("❌ DATA MISMATCH! UI shows: " + actualUIValue + " but DB says: " + expectedValue);
+                    }
                 }
                 break;
 
@@ -110,41 +124,31 @@ public class TestExecutor {
     }
 
     private void handleFileVerification(String extension) {
-        System.out.println("⏳ Waiting 5s for download to complete...");
+        System.out.println("⏳ Waiting 5s for download...");
         try { Thread.sleep(5000); } catch (InterruptedException e) {}
-
         File dir = new File(downloadPath);
         File[] files = dir.listFiles();
         boolean found = false;
-
         if (files != null) {
             for (File f : files) {
                 if (f.getName().toLowerCase().contains(extension.toLowerCase())) {
                     found = true;
-                    System.out.println("✅ Found downloaded file: " + f.getName());
-                    // Cleanup so the folder stays empty for next run
                     f.delete();
                     break;
                 }
             }
         }
-        if (!found) throw new RuntimeException("❌ Download Failed: No ." + extension + " file found in " + downloadPath);
+        if (!found) throw new RuntimeException("❌ Download Failed!");
     }
 
-    public void resetSession() {
-        if (driver != null) driver.manage().deleteAllCookies();
-    }
-
+    public void resetSession() { if (driver != null) driver.manage().deleteAllCookies(); }
     public String captureScreenshot(String fileName) {
         File folder = new File("reports/screenshots");
         if (!folder.exists()) folder.mkdirs();
         String path = "reports/screenshots/" + fileName + ".png";
-        try {
-            File src = ((TakesScreenshot) driver).getScreenshotAs(OutputType.FILE);
-            FileUtils.copyFile(src, new File(path));
+        try { FileUtils.copyFile(((TakesScreenshot) driver).getScreenshotAs(OutputType.FILE), new File(path));
         } catch (IOException e) { e.printStackTrace(); }
         return "screenshots/" + fileName + ".png";
     }
-
     public void quit() { if (driver != null) driver.quit(); }
 }
