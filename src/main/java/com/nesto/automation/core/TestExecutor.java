@@ -32,21 +32,18 @@ public class TestExecutor {
 
         ChromeOptions options = new ChromeOptions();
 
-        // --- 🔒 PASSWORD MANAGER & AUTOFILL BLOCKERS ---
         Map<String, Object> prefs = new HashMap<>();
         prefs.put("credentials_enable_service", false);
         prefs.put("profile.password_manager_enabled", false);
         prefs.put("autofill.profile_enabled", false);
         prefs.put("profile.password_manager_leak_detection", false);
 
-        // --- 📥 AUTO-DOWNLOAD SETTINGS ---
         prefs.put("download.default_directory", downloadPath);
         prefs.put("download.prompt_for_download", false);
         prefs.put("download.directory_upgrade", true);
         prefs.put("safebrowsing.enabled", true);
         options.setExperimentalOption("prefs", prefs);
 
-        // --- 🛡️ BROWSER SECURITY ---
         options.addArguments("--safebrowsing-disable-address-inventory-limit");
         options.addArguments("--disable-features=SafeBrowsingPasswordCheck");
         options.addArguments("--disable-sync");
@@ -89,49 +86,63 @@ public class TestExecutor {
                 inputActions.type(xpath, value);
                 break;
 
+            case "dbexecute":
+                if (value.contains("{DB_QUERY}")) {
+                    String sql = value.replace("{DB_QUERY}", "").trim();
+                    DatabaseUtil.executeUpdate(sql);
+                    step.setDetails("DB Action Executed: " + sql);
+                } else {
+                    throw new RuntimeException("❌ dbexecute requires {DB_QUERY} prefix in Value column");
+                }
+                break;
+
             case "verify":
             case "verifydownload":
-                if (xpath == null || xpath.isEmpty()) {
-                    if (value.toLowerCase().contains("pdf")) {
+                // 1. URL or PDF Verification (No XPath provided)
+                if (xpath == null || xpath.isEmpty() || xpath.trim().equalsIgnoreCase("null")) {
+                    if (value.toLowerCase().contains(".pdf") || action.equals("verifydownload")) {
                         handleFileVerification(value);
                     } else {
+                        // If it's a URL check
                         boolean urlMatched = waitActions.waitForUrl(value);
                         if (!urlMatched) throw new RuntimeException("❌ URL Verification Failed: " + value);
                     }
                 } else {
-                    // --- 📊 LIVE DATABASE & UI VERIFICATION ---
+                    // 2. Data/Count Verification (XPath exists)
                     String expectedValue = value;
+
+                    // --- DATABASE FETCH LOGIC ---
                     if (value.startsWith("{DB_QUERY}")) {
-                        String sql = value.replace("{DB_QUERY}", "");
+                        String sql = value.replace("{DB_QUERY}", "").trim();
+                        System.out.println("🔍 Querying Database: " + sql);
                         expectedValue = DatabaseUtil.getSingleValue(sql);
+
+                        if (expectedValue == null || expectedValue.equals("DB_ERROR")) {
+                            throw new RuntimeException("❌ Database Error: Query returned no value or failed. Query: " + sql);
+                        }
                     }
 
-                    // --- 🛠️ FIX: DIFFERENTIATE BETWEEN TEXT VERIFY AND COUNT VERIFY ---
-                    // If XPath ends with /tr or /td, and we expect a number, we perform a count check
-                    if (xpath.endsWith("/tr") || xpath.endsWith("/tbody/tr")) {
+                    // --- UI VALIDATION LOGIC ---
+                    if (xpath.endsWith("/tr") || xpath.endsWith("/tbody/tr") || xpath.toLowerCase().contains("count")) {
+                        // COUNT VERIFICATION
                         List<WebElement> elements = driver.findElements(By.xpath(xpath));
                         String actualCount = String.valueOf(elements.size());
-
-                        String comparisonResult = "Count Validation: UI[" + actualCount + "] vs DB/Expected[" + expectedValue + "]";
-                        step.setDetails(comparisonResult);
-
-                        if (actualCount.equals(expectedValue.trim())) {
-                            System.out.println("✅ PASS: " + comparisonResult);
-                        } else {
-                            throw new RuntimeException("❌ COUNT MISMATCH! " + comparisonResult);
-                        }
+                        String res = "Count Validation: UI[" + actualCount + "] vs DB/Expected[" + expectedValue + "]";
+                        step.setDetails(res);
+                        if (!actualCount.equals(expectedValue.trim())) throw new RuntimeException("❌ COUNT MISMATCH! " + res);
+                        System.out.println("✅ PASS: " + res);
                     } else {
-                        // STANDARD TEXT VERIFICATION
+                        // TEXT VERIFICATION
                         WebElement element = waitActions.waitForElementVisible(xpath);
                         String actualUIValue = element.getText().trim();
+                        String res = "Text Validation: UI[" + actualUIValue + "] vs DB/Expected[" + expectedValue + "]";
+                        step.setDetails(res);
 
-                        String comparisonResult = "Text Validation: UI[" + actualUIValue + "] vs DB/Expected[" + expectedValue + "]";
-                        step.setDetails(comparisonResult);
-
+                        // Using case-insensitive contains for better reliability
                         if (actualUIValue.toLowerCase().contains(expectedValue.toLowerCase().trim())) {
-                            System.out.println("✅ PASS: " + comparisonResult);
+                            System.out.println("✅ PASS: " + res);
                         } else {
-                            throw new RuntimeException("❌ DATA MISMATCH! " + comparisonResult);
+                            throw new RuntimeException("❌ DATA MISMATCH! " + res);
                         }
                     }
                 }
@@ -150,7 +161,7 @@ public class TestExecutor {
         boolean found = false;
         if (files != null) {
             for (File f : files) {
-                if (f.getName().toLowerCase().contains(extension.toLowerCase())) {
+                if (f.getName().toLowerCase().contains(extension.toLowerCase().replace(".pdf",""))) {
                     found = true;
                     f.delete();
                     break;

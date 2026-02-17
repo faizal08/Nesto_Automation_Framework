@@ -16,7 +16,7 @@ public class StepParser {
 
         String lowerStep = rawStep.toLowerCase();
 
-        // 1. Identify Action (Check for 'click' before 'type' to avoid confusion)
+        // 1. Identify Action
         if (lowerStep.contains("open url")) {
             action = "openurl";
         } else if (lowerStep.contains("click")) {
@@ -27,26 +27,31 @@ public class StepParser {
             action = "type";
         }
 
-        // 2. Extract XPath
-        // Looks for content starting with // inside double quotes or smart quotes
+        // 2. Extract XPath (Look for the part starting with // inside quotes)
         Pattern xpathPattern = Pattern.compile("[\"“](//.*?)[\"”]");
         Matcher xpathMatcher = xpathPattern.matcher(rawStep);
         if (xpathMatcher.find()) {
             xpath = xpathMatcher.group(1).trim();
         }
 
-        // 3. Extract Value
-        // Logic: Find strings inside quotes that do NOT start with //
-        // We added support for single quotes 'value' just in case.
-        Pattern valuePattern = Pattern.compile("[\"“']([^\"“”']*)[\"”']");
+        // 3. Extract Value (Improved Logic)
+        // We look for content inside double quotes specifically.
+        // This regex now IGNORES single quotes so it won't break on SQL queries.
+        Pattern valuePattern = Pattern.compile("[\"“]([^\"“”]+)[\"”]");
         Matcher valueMatcher = valuePattern.matcher(rawStep);
+
         while (valueMatcher.find()) {
             String found = valueMatcher.group(1).trim();
 
-            // If the found text is NOT the XPath we already found, it must be the Value
-            if (!found.equals(xpath) && !found.startsWith("//") && !found.isEmpty() && value.isEmpty()) {
+            // If it's not the XPath and not empty, it's our Value
+            if (!found.equals(xpath) && !found.startsWith("//") && value.isEmpty()) {
                 value = found;
             }
+        }
+
+        // Fallback for OpenURL which might not have quotes
+        if (action.equals("openurl") && value.isEmpty()) {
+            value = rawStep.substring(rawStep.toLowerCase().indexOf("url") + 3).trim();
         }
 
         return new TestStep(action, value, xpath);
