@@ -72,14 +72,9 @@ public class TestExecutor {
                 break;
 
             case "click":
-                if (xpath != null && (xpath.contains("submit") || value.toLowerCase().contains("sign in"))) {
-                    waitActions.waitForElementClickable(xpath).submit();
-                } else {
-                    try {
-                        WebElement el = waitActions.waitForElementClickable(xpath);
-                        ((JavascriptExecutor) driver).executeScript("arguments[0].click();", el);
-                    } catch (Exception e) { clickActions.click(xpath); }
-                }
+                clickActions.click(xpath);
+                // Wait for the backend/UI to finish processing the action (e.g. Delete)
+                try { Thread.sleep(1500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
                 break;
 
             case "type":
@@ -98,54 +93,7 @@ public class TestExecutor {
 
             case "verify":
             case "verifydownload":
-                // 1. URL or PDF Verification (No XPath provided)
-                if (xpath == null || xpath.isEmpty() || xpath.trim().equalsIgnoreCase("null")) {
-                    if (value.toLowerCase().contains(".pdf") || action.equals("verifydownload")) {
-                        handleFileVerification(value);
-                    } else {
-                        // If it's a URL check
-                        boolean urlMatched = waitActions.waitForUrl(value);
-                        if (!urlMatched) throw new RuntimeException("❌ URL Verification Failed: " + value);
-                    }
-                } else {
-                    // 2. Data/Count Verification (XPath exists)
-                    String expectedValue = value;
-
-                    // --- DATABASE FETCH LOGIC ---
-                    if (value.startsWith("{DB_QUERY}")) {
-                        String sql = value.replace("{DB_QUERY}", "").trim();
-                        System.out.println("🔍 Querying Database: " + sql);
-                        expectedValue = DatabaseUtil.getSingleValue(sql);
-
-                        if (expectedValue == null || expectedValue.equals("DB_ERROR")) {
-                            throw new RuntimeException("❌ Database Error: Query returned no value or failed. Query: " + sql);
-                        }
-                    }
-
-                    // --- UI VALIDATION LOGIC ---
-                    if (xpath.endsWith("/tr") || xpath.endsWith("/tbody/tr") || xpath.toLowerCase().contains("count")) {
-                        // COUNT VERIFICATION
-                        List<WebElement> elements = driver.findElements(By.xpath(xpath));
-                        String actualCount = String.valueOf(elements.size());
-                        String res = "Count Validation: UI[" + actualCount + "] vs DB/Expected[" + expectedValue + "]";
-                        step.setDetails(res);
-                        if (!actualCount.equals(expectedValue.trim())) throw new RuntimeException("❌ COUNT MISMATCH! " + res);
-                        System.out.println("✅ PASS: " + res);
-                    } else {
-                        // TEXT VERIFICATION
-                        WebElement element = waitActions.waitForElementVisible(xpath);
-                        String actualUIValue = element.getText().trim();
-                        String res = "Text Validation: UI[" + actualUIValue + "] vs DB/Expected[" + expectedValue + "]";
-                        step.setDetails(res);
-
-                        // Using case-insensitive contains for better reliability
-                        if (actualUIValue.toLowerCase().contains(expectedValue.toLowerCase().trim())) {
-                            System.out.println("✅ PASS: " + res);
-                        } else {
-                            throw new RuntimeException("❌ DATA MISMATCH! " + res);
-                        }
-                    }
-                }
+                handleVerification(step, action, value, xpath);
                 break;
 
             default:
@@ -153,22 +101,82 @@ public class TestExecutor {
         }
     }
 
+    private void handleVerification(TestStep step, String action, String value, String xpath) {
+        if (xpath == null || xpath.isEmpty() || xpath.trim().equalsIgnoreCase("null")) {
+            if (value.toLowerCase().contains(".pdf") || action.equals("verifydownload")) {
+                handleFileVerification(value);
+            } else {
+                boolean urlMatched = waitActions.waitForUrl(value);
+                if (!urlMatched) throw new RuntimeException("❌ URL Verification Failed: " + value);
+            }
+        } else {
+            String expectedValue = value;
+
+            if (value.startsWith("{DB_QUERY}")) {
+                String sql = value.replace("{DB_QUERY}", "").trim();
+                System.out.println("🔍 Querying Database: " + sql);
+                expectedValue = DatabaseUtil.getSingleValue(sql);
+
+                if (expectedValue == null || expectedValue.equals("DB_ERROR")) {
+                    throw new RuntimeException("❌ Database Error: Query failed. Query: " + sql);
+                }
+            }
+
+            // --- IMPROVED SMART VERIFICATION LOGIC ---
+
+            // 1. Is this XPath a collection (Table rows or List items)?
+            boolean isTableList = xpath.contains("/tr") || xpath.contains("/li");
+
+            // 2. Is this a Delete verification (Expecting 0)?
+            boolean expectingZero = expectedValue.trim().equals("0");
+
+            // We only use findElements().size() if we are counting rows or expecting 0.
+            // Dashboard headers (which show numbers but are single elements) will go to the 'else' block.
+            if ((isTableList && !xpath.contains("/td")) || expectingZero) {
+                List<WebElement> elements = driver.findElements(By.xpath(xpath));
+                String actualCount = String.valueOf(elements.size());
+                String res = "Count Validation: UI[" + actualCount + "] vs Expected[" + expectedValue + "]";
+                step.setDetails(res);
+
+                if (!actualCount.equals(expectedValue.trim())) {
+                    throw new RuntimeException("❌ COUNT MISMATCH! " + res);
+                }
+                System.out.println("✅ PASS: " + res);
+            } else {
+                // Regular text validation (Dashboard counts, Name checks, etc.)
+                WebElement element = waitActions.waitForElementVisible(xpath);
+                String actualUIValue = element.getText().trim();
+                String res = "Text Validation: UI[" + actualUIValue + "] vs Expected[" + expectedValue + "]";
+                step.setDetails(res);
+
+                if (actualUIValue.toLowerCase().contains(expectedValue.toLowerCase().trim())) {
+                    System.out.println("✅ PASS: " + res);
+                } else {
+                    throw new RuntimeException("❌ DATA MISMATCH! " + res);
+                }
+            }
+        }
+    }
+
     private void handleFileVerification(String extension) {
-        System.out.println("⏳ Waiting 5s for download...");
-        try { Thread.sleep(5000); } catch (InterruptedException e) {}
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
+
+        String cleanName = extension.toLowerCase().replace(".pdf", "").replace("\"", "");
         File dir = new File(downloadPath);
         File[] files = dir.listFiles();
         boolean found = false;
+
         if (files != null) {
             for (File f : files) {
-                if (f.getName().toLowerCase().contains(extension.toLowerCase().replace(".pdf",""))) {
+                if (f.getName().toLowerCase().contains(cleanName) && !f.getName().endsWith(".crdownload")) {
                     found = true;
+                    System.out.println("🎯 File verified and deleted: " + f.getName());
                     f.delete();
                     break;
                 }
             }
         }
-        if (!found) throw new RuntimeException("❌ Download Failed!");
+        if (!found) throw new RuntimeException("❌ Download Failed! File not found in: " + downloadPath);
     }
 
     public void resetSession() { if (driver != null) driver.manage().deleteAllCookies(); }
