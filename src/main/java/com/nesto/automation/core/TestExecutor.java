@@ -2,7 +2,7 @@ package com.nesto.automation.core;
 
 import com.nesto.automation.actions.*;
 import com.nesto.automation.parser.TestStep;
-import com.nesto.automation.utils.DatabaseUtil; // Added Import
+import com.nesto.automation.utils.DatabaseUtil;
 import org.apache.commons.io.FileUtils;
 import org.openqa.selenium.*;
 import org.openqa.selenium.chrome.ChromeDriver;
@@ -38,7 +38,7 @@ public class TestExecutor {
         prefs.put("autofill.profile_enabled", false);
         prefs.put("profile.password_manager_leak_detection", false);
 
-        // --- 📥 AUTO-DOWNLOAD SETTINGS (Prevents "Save As" Popup) ---
+        // --- 📥 AUTO-DOWNLOAD SETTINGS ---
         prefs.put("download.default_directory", downloadPath);
         prefs.put("download.prompt_for_download", false);
         prefs.put("download.directory_upgrade", true);
@@ -98,22 +98,28 @@ public class TestExecutor {
                         if (!urlMatched) throw new RuntimeException("❌ URL Verification Failed: " + value);
                     }
                 } else {
-                    // --- 📊 NEW: LIVE DATABASE VERIFICATION LOGIC ---
+                    // --- 📊 LIVE DATABASE & UI VERIFICATION ---
                     String expectedValue = value;
+                    String logPrefix = "Verified Text: ";
+
                     if (value.startsWith("{DB_QUERY}")) {
                         String sql = value.replace("{DB_QUERY}", "");
                         expectedValue = DatabaseUtil.getSingleValue(sql);
-                        System.out.println("🔍 DB Result: " + expectedValue);
+                        logPrefix = "DB Validation: ";
                     }
 
                     // Get UI text and compare
                     WebElement element = waitActions.waitForElementVisible(xpath);
                     String actualUIValue = element.getText().trim();
 
+                    // --- 📝 SET DETAILS FOR REPORTING ---
+                    String comparisonResult = logPrefix + "UI[" + actualUIValue + "] vs DB/Expected[" + expectedValue + "]";
+                    step.setDetails(comparisonResult);
+
                     if (actualUIValue.contains(expectedValue)) {
-                        System.out.println("✅ PASS: UI (" + actualUIValue + ") matches DB (" + expectedValue + ")");
+                        System.out.println("✅ PASS: " + comparisonResult);
                     } else {
-                        throw new RuntimeException("❌ DATA MISMATCH! UI shows: " + actualUIValue + " but DB says: " + expectedValue);
+                        throw new RuntimeException("❌ DATA MISMATCH! " + comparisonResult);
                     }
                 }
                 break;
@@ -142,13 +148,17 @@ public class TestExecutor {
     }
 
     public void resetSession() { if (driver != null) driver.manage().deleteAllCookies(); }
+
     public String captureScreenshot(String fileName) {
         File folder = new File("reports/screenshots");
         if (!folder.exists()) folder.mkdirs();
         String path = "reports/screenshots/" + fileName + ".png";
-        try { FileUtils.copyFile(((TakesScreenshot) driver).getScreenshotAs(OutputType.FILE), new File(path));
+        try {
+            File srcFile = ((TakesScreenshot) driver).getScreenshotAs(OutputType.FILE);
+            FileUtils.copyFile(srcFile, new File(path));
         } catch (IOException e) { e.printStackTrace(); }
         return "screenshots/" + fileName + ".png";
     }
+
     public void quit() { if (driver != null) driver.quit(); }
 }

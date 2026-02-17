@@ -65,9 +65,7 @@ public class Main {
 
                         System.out.println("📝 Running: " + tcId);
 
-                        // SMART SESSION MANAGEMENT:
                         // Reset session only for the first sheet (Auth_Tests)
-                        // This allows Dashboard_Tests to stay logged in
                         if (s == 0) {
                             executor.resetSession();
                         }
@@ -76,8 +74,20 @@ public class Main {
                     // Execute and Log Step
                     try {
                         TestStep parsedStep = StepParser.parseStep(stepText);
+
+                        // 1. Execute the logic (Selenium + Database)
                         executor.executeIndividualStep(parsedStep);
+
+                        // 2. Log the basic step text
                         currentTest.pass(stepText);
+
+                        // 3. --- 📊 ENHANCED REPORTING: Capture DB/UI Details ---
+                        String extraDetails = parsedStep.getDetails();
+                        if (extraDetails != null && !extraDetails.isEmpty()) {
+                            // Injects the live data comparison as a blue info block in Extent Report
+                            currentTest.info("<span style='color:#00e5ff; font-weight:bold;'>🔍 Data Verification: " + extraDetails + "</span>");
+                        }
+
                     } catch (Exception stepException) {
                         // Log failure and take screenshot
                         String failScreen = executor.captureScreenshot("Fail_" + System.currentTimeMillis());
@@ -116,7 +126,7 @@ public class Main {
             System.err.println("\n❌ FATAL SYSTEM ERROR: " + e.getMessage());
         } finally {
             extent.flush();
-            executor.quit(); // Ensure browser closes at the end
+            executor.quit();
             System.out.println("📊 Detailed Report Generated at: " + reportPath);
         }
     }
