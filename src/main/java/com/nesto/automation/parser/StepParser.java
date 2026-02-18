@@ -25,33 +25,54 @@ public class StepParser {
             action = "verify";
         } else if (lowerStep.contains("type") || lowerStep.contains("enter")) {
             action = "type";
+        } else if (lowerStep.contains("dbexecute")) {
+            action = "dbexecute";
         }
 
-        // 2. Extract XPath (Look for the part starting with // inside quotes)
-        Pattern xpathPattern = Pattern.compile("[\"“](//.*?)[\"”]");
+        // 2. Extract XPath (Improved to support (//xpath)[index])
+        Pattern xpathPattern = Pattern.compile("[\"“](\\(?//.*?)[\"”]");
         Matcher xpathMatcher = xpathPattern.matcher(rawStep);
         if (xpathMatcher.find()) {
             xpath = xpathMatcher.group(1).trim();
         }
 
-        // 3. Extract Value (Improved Logic)
-        // We look for content inside double quotes specifically.
-        // This regex now IGNORES single quotes so it won't break on SQL queries.
+        // 3. Handle Special Case: Verification without XPath (URL or PDF checks)
+        // If it's a verify action but no XPath was found, we flag it so the Executor doesn't crash
+        if (action.equals("verify") && xpath.isEmpty()) {
+            if (lowerStep.contains("url") || lowerStep.contains(".pdf") || lowerStep.contains("invoice")) {
+                xpath = "SKIP_XPATH";
+            }
+        }
+
+        // 4. Extract Value
         Pattern valuePattern = Pattern.compile("[\"“]([^\"“”]+)[\"”]");
         Matcher valueMatcher = valuePattern.matcher(rawStep);
 
         while (valueMatcher.find()) {
             String found = valueMatcher.group(1).trim();
 
-            // If it's not the XPath and not empty, it's our Value
-            if (!found.equals(xpath) && !found.startsWith("//") && value.isEmpty()) {
+            // If it's not the XPath, and doesn't look like an XPath, it's our Value
+            if (!found.equals(xpath) && !found.startsWith("//") && !found.startsWith("(//") && value.isEmpty()) {
                 value = found;
             }
         }
 
-        // Fallback for OpenURL which might not have quotes
+        // 5. Fallback for OpenURL which might not have quotes
         if (action.equals("openurl") && value.isEmpty()) {
-            value = rawStep.substring(rawStep.toLowerCase().indexOf("url") + 3).trim();
+            int urlIndex = lowerStep.indexOf("url");
+            if (urlIndex != -1) {
+                value = rawStep.substring(urlIndex + 3).trim().replace("\"", "");
+            }
+        }
+
+        // 6. Special Fix for DB_QUERY steps
+        if (value.isEmpty() && rawStep.contains("{DB_QUERY}")) {
+            int start = rawStep.indexOf("{DB_QUERY}");
+            // Find the end by looking for the closing quote after the query
+            int end = rawStep.indexOf("\"", start);
+            if (end == -1) end = rawStep.length();
+
+            value = rawStep.substring(start, end).trim();
         }
 
         return new TestStep(action, value, xpath);

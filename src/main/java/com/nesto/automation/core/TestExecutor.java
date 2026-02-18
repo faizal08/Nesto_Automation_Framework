@@ -7,6 +7,7 @@ import org.apache.commons.io.FileUtils;
 import org.openqa.selenium.*;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.support.ui.Select;
 import io.github.bonigarcia.wdm.WebDriverManager;
 
 import java.io.File;
@@ -66,6 +67,14 @@ public class TestExecutor {
 
         System.out.println("🚀 Executing: " + action + " | Value: " + value + " | XPath: " + xpath);
 
+        // --- UPDATED SAFETY CHECK ---
+        // 'Verify' is now allowed to have an empty XPath (for URL/File checks)
+        // Only 'Click' and 'Type' strictly require an XPath to interact with elements
+        if ((action.equals("click") || action.equals("type"))
+                && (xpath == null || xpath.isEmpty() || xpath.equalsIgnoreCase("SKIP_XPATH"))) {
+            throw new RuntimeException("❌ Action '" + action + "' requires a valid XPath, but received an empty string. Check StepParser.");
+        }
+
         switch (action) {
             case "openurl":
                 driver.get(value);
@@ -73,16 +82,35 @@ public class TestExecutor {
 
             case "click":
                 clickActions.click(xpath);
-                // Wait for the backend/UI to finish processing the action (e.g. Delete)
                 try { Thread.sleep(1500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
                 break;
 
             case "type":
-                inputActions.type(xpath, value);
+                WebElement element = waitActions.waitForElementVisible(xpath);
+                if (element.getTagName().equalsIgnoreCase("select")) {
+                    Select select = new Select(element);
+                    List<WebElement> options = select.getOptions();
+                    boolean found = false;
+
+                    for (WebElement option : options) {
+                        String optionText = option.getText();
+                        if (optionText.toLowerCase().contains(value.toLowerCase().trim())) {
+                            select.selectByVisibleText(optionText);
+                            System.out.println("✅ Selected Dropdown Value: " + optionText);
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        throw new RuntimeException("❌ Option containing '" + value + "' not found in dropdown at " + xpath);
+                    }
+                } else {
+                    inputActions.type(xpath, value);
+                }
                 break;
 
             case "dbexecute":
-                if (value.contains("{DB_QUERY}")) {
+                if (value != null && value.contains("{DB_QUERY}")) {
                     String sql = value.replace("{DB_QUERY}", "").trim();
                     DatabaseUtil.executeUpdate(sql);
                     step.setDetails("DB Action Executed: " + sql);
@@ -102,17 +130,30 @@ public class TestExecutor {
     }
 
     private void handleVerification(TestStep step, String action, String value, String xpath) {
-        if (xpath == null || xpath.isEmpty() || xpath.trim().equalsIgnoreCase("null")) {
-            if (value.toLowerCase().contains(".pdf") || action.equals("verifydownload")) {
+        // --- UPDATED LOGIC FOR URL/FILE VERIFICATION ---
+        boolean isNoXpathAction = (xpath == null || xpath.isEmpty() || xpath.equalsIgnoreCase("SKIP_XPATH") || xpath.equalsIgnoreCase("null"));
+
+        if (isNoXpathAction) {
+            if (value != null && (value.toLowerCase().contains(".pdf") || action.equals("verifydownload"))) {
                 handleFileVerification(value);
+                step.setDetails("File Verification Passed for: " + value);
             } else {
-                boolean urlMatched = waitActions.waitForUrl(value);
-                if (!urlMatched) throw new RuntimeException("❌ URL Verification Failed: " + value);
+                // Remove potential quotes and whitespace
+                String cleanUrlTarget = value.replace("\"", "").trim();
+                System.out.println("🌐 Verifying URL contains: " + cleanUrlTarget);
+
+                boolean urlMatched = waitActions.waitForUrl(cleanUrlTarget);
+                if (!urlMatched) {
+                    String actualUrl = driver.getCurrentUrl();
+                    throw new RuntimeException("❌ URL Verification Failed! Expected to contain: [" + cleanUrlTarget + "] but actual URL is: [" + actualUrl + "]");
+                }
+                step.setDetails("URL Verification Passed: Contains " + cleanUrlTarget);
             }
         } else {
+            // Logic for Element/Text/DB Verification (Requires XPath)
             String expectedValue = value;
 
-            if (value.startsWith("{DB_QUERY}")) {
+            if (value != null && value.startsWith("{DB_QUERY}")) {
                 String sql = value.replace("{DB_QUERY}", "").trim();
                 System.out.println("🔍 Querying Database: " + sql);
                 expectedValue = DatabaseUtil.getSingleValue(sql);
@@ -122,16 +163,9 @@ public class TestExecutor {
                 }
             }
 
-            // --- IMPROVED SMART VERIFICATION LOGIC ---
-
-            // 1. Is this XPath a collection (Table rows or List items)?
             boolean isTableList = xpath.contains("/tr") || xpath.contains("/li");
+            boolean expectingZero = expectedValue != null && expectedValue.trim().equals("0");
 
-            // 2. Is this a Delete verification (Expecting 0)?
-            boolean expectingZero = expectedValue.trim().equals("0");
-
-            // We only use findElements().size() if we are counting rows or expecting 0.
-            // Dashboard headers (which show numbers but are single elements) will go to the 'else' block.
             if ((isTableList && !xpath.contains("/td")) || expectingZero) {
                 List<WebElement> elements = driver.findElements(By.xpath(xpath));
                 String actualCount = String.valueOf(elements.size());
@@ -143,13 +177,12 @@ public class TestExecutor {
                 }
                 System.out.println("✅ PASS: " + res);
             } else {
-                // Regular text validation (Dashboard counts, Name checks, etc.)
                 WebElement element = waitActions.waitForElementVisible(xpath);
                 String actualUIValue = element.getText().trim();
                 String res = "Text Validation: UI[" + actualUIValue + "] vs Expected[" + expectedValue + "]";
                 step.setDetails(res);
 
-                if (actualUIValue.toLowerCase().contains(expectedValue.toLowerCase().trim())) {
+                if (expectedValue != null && actualUIValue.toLowerCase().contains(expectedValue.toLowerCase().trim())) {
                     System.out.println("✅ PASS: " + res);
                 } else {
                     throw new RuntimeException("❌ DATA MISMATCH! " + res);
@@ -161,7 +194,7 @@ public class TestExecutor {
     private void handleFileVerification(String extension) {
         try { Thread.sleep(2000); } catch (InterruptedException e) {}
 
-        String cleanName = extension.toLowerCase().replace(".pdf", "").replace("\"", "");
+        String cleanName = extension.toLowerCase().replace(".pdf", "").replace("\"", "").trim();
         File dir = new File(downloadPath);
         File[] files = dir.listFiles();
         boolean found = false;
