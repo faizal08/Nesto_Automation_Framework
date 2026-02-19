@@ -1,5 +1,6 @@
 package com.nesto.automation.utils;
 
+import com.nesto.automation.parser.TestCaseRow;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import java.io.File;
@@ -9,41 +10,27 @@ import java.util.List;
 
 public class ExcelReader {
 
-    /**
-     * Reads test steps from a specific Excel sheet.
-     * Now updated to handle Column C (Index 2) and strip step numbers.
-     */
-    public List<String> getTestSteps(String filePath, String sheetName) {
-        List<String> steps = new ArrayList<>();
+    public List<TestCaseRow> getSheetData(Workbook workbook, int sheetIndex) {
+        List<TestCaseRow> dataList = new ArrayList<>();
+        Sheet sheet = workbook.getSheetAt(sheetIndex);
 
-        try (FileInputStream fis = new FileInputStream(new File(filePath));
-             Workbook workbook = new XSSFWorkbook(fis)) {
+        for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+            Row row = sheet.getRow(i);
+            if (row == null) continue;
 
-            Sheet sheet = workbook.getSheet(sheetName);
-            if (sheet == null) {
-                System.err.println("❌ Error: Sheet '" + sheetName + "' not found in " + filePath);
-                return steps;
-            }
+            // Read raw values
+            String tcId = (row.getCell(0) != null) ? row.getCell(0).toString().trim() : "";
+            String tcDesc = (row.getCell(1) != null) ? row.getCell(1).toString().trim() : "";
+            String rawStep = (row.getCell(2) != null) ? row.getCell(2).toString().trim() : "";
 
-            for (Row row : sheet) {
-                // CHANGED: Index is now 2 (Column C)
-                Cell cell = row.getCell(2);
+            if (rawStep.isEmpty()) continue;
 
-                if (cell != null && cell.getCellType() == CellType.STRING) {
-                    String rawText = cell.getStringCellValue().trim();
+            // 🔥 CLEANING CODE: Strip "1.", "2. " etc.
+            String cleanedStep = rawStep.replaceFirst("^\\d+\\.\\s*", "");
 
-                    if (!rawText.isEmpty()) {
-                        // NEW: Clean the step text
-                        // This regex replaces "1.", "2. ", "10." at the start of a string
-                        String cleanedText = rawText.replaceFirst("^\\d+\\.\\s*", "");
-
-                        steps.add(cleanedText);
-                    }
-                }
-            }
-        } catch (Exception e) {
-            System.err.println("❌ Error reading Excel: " + e.getMessage());
+            // Package it up
+            dataList.add(new TestCaseRow(tcId, tcDesc, cleanedStep));
         }
-        return steps;
+        return dataList;
     }
 }
