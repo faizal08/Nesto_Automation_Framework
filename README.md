@@ -124,11 +124,7 @@ Test will automatically pop up in chrome
 
 5. View Test Reports :
 
-1.Look at the project file tree on the left.
-2.Open the reports folder.
-3.Right-click on Nesto_Automation_Report.html.
-4.Select Open in Browser -> Chrome
-5.You can view report like given Below
+Look at the project file tree on the left --> Open the reports folder --> Right-click on Nesto_Automation_Report.html --> Select Open in Browser Chrome --> You can view report like given Below
 
 ![Test Report Screenshot](report_screenshot.png)
 
