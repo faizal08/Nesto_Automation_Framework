@@ -102,14 +102,13 @@ spring.datasource.password=your_password
 
 1. Open your web browser and navigate to [http://localhost:8080](http://localhost:8080)
 2. Create an account or log in to access the store.
-3. Add products, customers,create sales and generate invoice for sale.
-4.Dont Stop Run as we are going test it using Nesto Automation Framework.
+3. Add products, customers,create sales and generate invoice for sale & dont Stop Run as we are going test it using Nesto Automation Framework.
 
 ### II - Installation & Setup of   Nesto_Automation_Framework
 
 1. **Clone the Framework:**
    ```bash
-   git clone [https://github.com/faizal08/Nesto_Automation_Framework.git](https://github.com/faizal08/Nesto_Automation_Framework.git)
+   git clone https://github.com/faizal08/Nesto_Automation_Framework.git
    `````
 2. Navigate to the project directory:
 ```bash
@@ -122,7 +121,7 @@ mvn compile exec:java -Dexec.mainClass="com.nesto.automation.core.Main"
 ```
 Test will automatically pop up in chrome
 
-5. View Test Reports :
+4. View Test Reports :
 
 Look at the project file tree on the left --> Open the reports folder --> Right-click on Nesto_Automation_Report.html --> Select Open in Browser Chrome --> You can view report like given Below
 
