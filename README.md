@@ -72,7 +72,7 @@ To set up Nesto_supermarket_app locally, follow these steps:
 
 1. Clone the repository:
 ```bash
-   git clone https://github.com/faizal08/Nesto_supermarket_app.git
+   https://github.com/faizal08/supermarket-billing-system.git
   
 ```
 
